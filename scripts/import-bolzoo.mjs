@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync, renameSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync, renameSync, existsSync, cpSync, copyFileSync, constants } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { inflateRawSync } from 'node:zlib';
@@ -7,6 +7,30 @@ import { createHash } from 'node:crypto';
 // Narrow ZIP reader: stored/deflated, single-disk ZIPs. Never follows archive paths or links.
 const table=Array.from({length:256},(_,n)=>{for(let i=0;i<8;i++)n=(n&1)?0xedb88320^(n>>>1):n>>>1;return n>>>0;});
 const crc=b=>{let c=0xffffffff;for(const n of b)c=table[(c^n)&255]^(c>>>8);return(c^0xffffffff)>>>0;};
+const removeTemporary=path=>rmSync(path,{recursive:true,force:true,maxRetries:3,retryDelay:100});
+
+// Windows scanners and some mapped drives can block a directory rename even
+// though ordinary file copies work. Install the entry page only after all other
+// files have arrived, so the player cannot launch a partially copied build.
+export function installStagedBuild(staging,target,{renameDirectory=renameSync,copyDirectory=cpSync}={}) {
+  try { renameDirectory(staging,target);return {installation:'rename'}; }
+  catch(error) { if(!['EPERM','EACCES','EBUSY','EXDEV'].includes(error.code))throw error; }
+  mkdirSync(target); // Exclusive: never copy into an existing build or symlink.
+  try {
+    const entry=join(staging,'index.html');
+    copyDirectory(staging,target,{recursive:true,force:false,errorOnExist:true,filter:source=>source!==entry});
+    const pendingEntry=join(target,'.bolzoo-index.html');
+    copyFileSync(entry,pendingEntry,constants.COPYFILE_EXCL);
+    renameSync(pendingEntry,join(target,'index.html'));
+  } catch(error) {
+    try { removeTemporary(target); }
+    catch(cleanup) { error.message+=`\nIncomplete folder could not be removed: ${target} (${cleanup.code}). Move it to a backup before retrying.`; }
+    throw error;
+  }
+  try { removeTemporary(staging); }
+  catch(error) { return {installation:'copy',warning:`Build installed, but temporary folder remains: ${staging} (${error.code}). It can be removed after closing programs that are using it.`}; }
+  return {installation:'copy'};
+}
 export function importBolzoo(archive, contentRoot) {
   const zip=readFileSync(archive);if(zip.length>512*1024*1024)throw Error('ZIP exceeds 512 MB.');
   let end=-1;
@@ -49,8 +73,12 @@ export function importBolzoo(archive, contentRoot) {
       mkdirSync(dirname(path),{recursive:true});writeFileSync(path,data);
     }
     writeFileSync(join(staging,'import-info.json'),JSON.stringify({title:'Болзоо',sha256:createHash('sha256').update(zip).digest('hex'),files:entries.length,bytes:total,importedAt:new Date().toISOString()},null,2));
-    renameSync(staging,target);return {target,files:entries.length,bytes:total};
-  }catch(e){rmSync(staging,{recursive:true,force:true});throw e;}
+    const installed=installStagedBuild(staging,target);return {target,files:entries.length,bytes:total,...installed};
+  }catch(e){
+    try { removeTemporary(staging); }
+    catch(cleanup) { e.message+=`\nTemporary folder could not be removed: ${staging} (${cleanup.code}).`; }
+    throw e;
+  }
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
   try{if(!process.argv[2])throw Error('Usage: npm run import:bolzoo -- "C:\\path\\NewProject-1.0-web.zip"');console.log(importBolzoo(resolve(process.argv[2]),resolve(process.env.GAME_CONTENT_ROOT||'./game-content')));}
