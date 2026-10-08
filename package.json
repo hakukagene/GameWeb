@@ -1,0 +1,12 @@
+{
+  "name": "storyplay-gameweb",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.13.0" },
+  "scripts": {
+    "start": "node server/index.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "check": "node --check server/index.mjs && node --check server/app.mjs && node --check dist/app.js"
+  }
+}
