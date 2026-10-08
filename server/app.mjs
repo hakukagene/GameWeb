@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { randomBytes, randomUUID, scrypt, timingSafeEqual, createHash } from 'node:crypto';
 import { promisify } from 'node:util';
 import { games } from './catalog.mjs';
+import { createGamePlayer } from './game-player.mjs';
 
 const derive = promisify(scrypt);
 const root = fileURLToPath(new URL('../dist/', import.meta.url));
@@ -17,7 +18,7 @@ const scryptOptions = { N: 32768, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
 const staticFiles = new Set(['index.html', 'style.css', 'app.js', 'train.jpg', 'city.webp', 'mountain.jpg']);
 const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.jpg': 'image/jpeg', '.webp': 'image/webp' };
 
-export function createApp({ dbPath = './data/storyplay.sqlite', origin = 'http://localhost:8000', production = false, demo = !production } = {}) {
+export function createApp({ dbPath = './data/storyplay.sqlite', origin = 'http://localhost:8000', production = false, demo = !production, gameOrigin = 'http://localhost:8001', contentRoot = './game-content' } = {}) {
   const appURL = new URL(origin);
   if (origin !== appURL.origin || !['http:', 'https:'].includes(appURL.protocol)) throw Error('APP_ORIGIN must be a plain http(s) origin without a trailing slash.');
   if (production && appURL.protocol !== 'https:') throw Error('Production requires an HTTPS APP_ORIGIN.');
@@ -44,6 +45,10 @@ export function createApp({ dbPath = './data/storyplay.sqlite', origin = 'http:/
   for (const g of games) seed.run(g.id, g.price);
   const attempts = new Map();
   let hashesInFlight = 0;
+  const player = createGamePlayer({root:contentRoot, origin:gameOrigin, appOrigin:origin, authorized:hash => {
+    if(production || !demo) return false;
+    return !!db.prepare(`SELECT 1 FROM sessions s JOIN demo_orders o ON o.user_id=s.user_id WHERE s.token_hash=? AND s.expires_at>? AND o.game_id='bolzoo'`).get(hash,Date.now());
+  }});
   const cookieName = production ? '__Host-storyplay_session' : 'storyplay_session';
   const cookie = (token, maxAge = ttl / 1000) => `${cookieName}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${production ? '; Secure' : ''}`;
   function rawToken(req) {
@@ -90,7 +95,7 @@ export function createApp({ dbPath = './data/storyplay.sqlite', origin = 'http:/
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'same-origin');
     res.setHeader('X-Frame-Options', 'DENY');
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; frame-src " + gameOrigin);
     if (production) res.setHeader('Strict-Transport-Security', 'max-age=31536000');
     try {
       const path = new URL(req.url, origin).pathname;
@@ -98,7 +103,21 @@ export function createApp({ dbPath = './data/storyplay.sqlite', origin = 'http:/
         if (req.method === 'POST') {
           if (req.headers.origin !== origin || req.headers['sec-fetch-site'] === 'cross-site') throw problem(403, 'Хүсэлтийн эх сурвалж зөвшөөрөгдөөгүй.');
         } else if (req.method !== 'GET') throw problem(405, 'Энэ үйлдэл дэмжигдэхгүй.');
-        if (path === '/api/games' && req.method === 'GET') return json(res, 200, { games });
+        if (path === '/api/games' && req.method === 'GET') {
+          const ready=await player.ready();
+          return json(res,200,{games:games.map(g=>({...g,playable:g.id==='bolzoo'&&ready&&demo&&!production}))});
+        }
+        if(path==='/api/games/bolzoo/cover'&&req.method==='GET') {
+          let cover;try{cover=await readFile(resolve(contentRoot,'bolzoo/game/images/story/school_gate.webp'));}catch{cover=await readFile(resolve(root,'city.webp'));res.setHeader('Content-Type','image/webp');}
+          res.writeHead(200,{'Content-Type':res.getHeader('Content-Type')||'image/webp','Cache-Control':'no-cache'});return res.end(cover);
+        }
+        if(path==='/api/games/bolzoo/launch'&&req.method==='POST') {
+          const user=requireUser(req);await body(req);
+          if(production||!demo)throw problem(403,'Туршилтын тоглох горим идэвхгүй байна.');
+          if(!await player.ready())throw problem(409,'Болзоо тоглоомын web build-ийг эхлээд импортлоно уу.');
+          if(!db.prepare('SELECT 1 FROM demo_orders WHERE user_id=? AND game_id=?').get(user.id,'bolzoo'))throw problem(403,'Эхлээд туршилтын сандаа нэмнэ үү.');
+          return json(res,200,{url:player.ticket(secretHash(rawToken(req)))});
+        }
         if (path === '/api/me' && req.method === 'GET') return json(res, 200, { user: session(req), demoEnabled: demo });
         if (['/api/auth/register', '/api/auth/login'].includes(path) && req.method === 'POST') {
           limit(req);
@@ -162,5 +181,7 @@ export function createApp({ dbPath = './data/storyplay.sqlite', origin = 'http:/
   });
   server.requestTimeout = 15000;
   server.headersTimeout = 10000;
-  return { server, db, close: () => new Promise((ok, reject) => server.close(e => { db.close(); e ? reject(e) : ok(); })) };
+  return { server, db, gameServer:player.server, close: async () => {
+    await Promise.all([server,player.server].filter(s=>s.listening).map(s=>new Promise((ok,reject)=>s.close(e=>e?reject(e):ok()))));db.close();
+  }};
 }

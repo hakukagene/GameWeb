@@ -2,6 +2,40 @@
 
 Монгол хэл дээрх Ren’Py тоглоомын дэлгүүр. Энэ шатанд хэрэглэгчийн бүртгэл, нэвтрэлт, серверт хадгалагддаг **туршилтын** сан болон захиалгын түүх ажиллана.
 
+## Болзоо тоглоом оруулах
+
+`NewProject-1.0-web.zip`-ийг GameWeb хавтсандаа хуулна. ZIP-ийг урьдчилан задлах шаардлагагүй. Сервер ассан бол Ctrl+C дарж зогсоогоод:
+
+```powershell
+cd Z:\Web\GameWeb
+git pull origin main
+npm.cmd run import:bolzoo -- ".\NewProject-1.0-web.zip"
+npm.cmd start
+```
+
+Эсвэл ZIP-ийн бүтэн замыг өгч болно:
+
+```powershell
+npm.cmd run import:bolzoo -- "C:\Users\YOUR_NAME\Downloads\NewProject-1.0-web.zip"
+```
+
+Importer нь бүх файлыг `game-content/bolzoo/` руу задална. Файл бүрийн checksum, нийт хэмжээ, замыг шалгана. ZIP64, шифрлэсэн ZIP дэмжихгүй. Байгаа `bolzoo` хавтсыг дарж бичихгүй; шинэ build оруулахын өмнө хуучин хавтсыг backup байрлал руу зөөж хадгална. Буруу ZIP-ийг хэсэгчлэн идэвхжүүлэхгүй.
+
+**http://localhost:8000 → Нэвтрэх → Болзоо → Туршилтын санд нэмэх → Тоглох.**
+
+Нэг `npm start` командаар дэлгүүр (8000), тусдаа тоглоомын сервер (8001) зэрэг асна. 8001-ийг шууд нээх биш дэлгүүрийн **Тоглох** товчийг ашиглана. Хоёр порт өөр апп ашиглаж байвал өөр порт сонгож `.env.example`-ийн `APP_ORIGIN`, `GAME_ORIGIN`-ийг тааруулна.
+
+- Каталог дээр тоглоомын нэр **Болзоо**, хувилбар 1.0 байна.
+- Build-ийн `school_gate.webp`-ийг дэлгүүрийн түр нүүр зурагт ашиглана; байхгүй үед жишээ зураг гарна.
+- Үнэ одоогоор **туршилтын горим**; бодит борлуулах үнэ тогтоогоогүй.
+- Тоглоомын 84 MB архив, 187 файл **GitHub-д орохгүй**. Private тоглоомын файлыг public кодын repository-д нийтлэхгүй. `game-content/` болон `*-web.zip` ignored.
+- Энэ build сервер ассан компьютер дээр байх ёстой. Шинэ clone бүрт ZIP импортлоно. Сервер байршуулахдаа тусдаа private content storage-д шилжүүлнэ.
+- Тоглох хүсэлт 60 секундийн нэг удаагийн ticket ашиглана. Тоглоомын файл бүрд 4 цагийн preview grant болон үндсэн нэвтрэлтийн session шалгана. Гарахад дараагийн файл хүсэлт хаагдана; аль хэдийн браузерт ачаалсан өгөгдлийг буцааж устгах DRM биш.
+- Ren’Py код нь дэлгүүрээс өөр origin-д iframe дотор ажиллана. WebAssembly MIME, media Range requests дэмжинэ. PWA service worker бүртгэл/түгээлтийг идэвхгүй болгосон; offline cache-аар эрхийн шалгалт алгасахгүй.
+- **Зөвхөн development + demo горимд тоглоно.** Production-д үнэгүй demo эрхээр энэ build нээгдэхгүй. Бодит төлбөрийн эрх дараагийн шатанд хийгдэнэ.
+- Save/Load нь Ren’Py-ийн браузерийн хадгалалт. Cloud save болон account тусгаарласан save биш; нэг браузерийг хоёр хэрэглэгч хуваалцвал game save хамт харагдаж болно. Origin-оо солих, browser storage цэвэрлэхэд save нөлөөлнө. Ren’Py цэсийн Import/Export Saves ашиглаж болно.
+- Browser дотор Python `requests`, `threading`, зарим видео функц дэмжигдэхгүй. Платформ холбогдсон ч тоглоомын ийм функцүүдэд тусдаа web тохируулга шаардагдаж болно.
+
 ## Windows дээр ажиллуулах
 
 Node.js 24.x суулгаад PowerShell-оо шинээр нээнэ (хамгийн багадаа Node 22.13 шаардлагатай).
@@ -71,6 +105,12 @@ npm.cmd start
 
 Production үед demo-г `true` болговол сервер асахгүй. Production session cookie нь `Secure`, `HttpOnly`, `SameSite=Strict`, `__Host-` prefix-тэй. Хөгжүүлэлтийн HTTP cookie мөн HttpOnly, SameSite=Strict. Нэвтрэлтээр session шинэчлэгдэж, гарахад хүчингүй болно. Өөрчлөлт хийдэг API нь яг зөв `Origin` болон JSON body шаарддаг. Нууц үг браузерийн storage-д хадгалагдахгүй.
 
+## Тоглоомын API
+
+- `POST /api/games/bolzoo/launch` — нэвтэрсэн, туршилтын сандаа нэмсэн, build импортлосон үед нэг удаагийн тоглох URL буцаана.
+- `GET /api/games/bolzoo/cover` — каталогийн нүүр зураг.
+- `GET /api/games` дотор `playable` нь build импортлогдсон болон preview идэвхтэй эсэхийг заана.
+
 ## API
 
 | Method | Path | Зориулалт |
@@ -95,8 +135,8 @@ npm.cmd test
 
 ## Дараагийн хөгжүүлэлт ба хязгаарлалт
 
-- Бодит мөнгө, төлбөрийн provider, webhook/receipt баталгаажуулалт холбогдоогүй. Demo захиалга **тоглох/татах бодит эрх үүсгэхгүй**.
-- Ren’Py тоглоомын build, cloud save, админ, Android/iOS апп хараахан холбогдоогүй.
+- Бодит мөнгө, төлбөрийн provider, webhook/receipt баталгаажуулалт холбогдоогүй. Demo захиалга **төлбөртэй эрх үүсгэхгүй**. Болзоо-д development preview тоглуулах нөхцөл болж ашиглагдана.
+- Болзоо web build импорт болон development player холбогдсон. Cloud save, админ, Android/iOS апп хараахан холбогдоогүй.
 - Имэйл баталгаажуулах, нууц үг сэргээх үйлчилгээ хараахан байхгүй.
 - Энэ нь нэг Node process + локал SQLite бүхий MVP. Олон instance-д shared database болон төвлөрсөн rate limiter хэрэгтэй. Одоогийн auth rate limiter нь process memory болон шууд холбогч IP ашигладаг; reverse proxy-ийн ард бүх хэрэглэгч нэг IP гэж тоологдож болно.
 - Нийтэд ажиллуулахын өмнө HTTPS reverse proxy, тогтмол диск, backup, email/reset, production тохиргоо шаардлагатай. App Store / Play Billing дараагийн шатанд тусдаа интеграцтай байна.

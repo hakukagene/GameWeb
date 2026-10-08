@@ -11,3 +11,6 @@ data/
 *.db
 *.db-*
 coverage/
+game-content/
+*.web.zip
+*-web.zip
