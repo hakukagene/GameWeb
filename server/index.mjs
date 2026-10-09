@@ -5,11 +5,16 @@ const origin = process.env.APP_ORIGIN || `http://localhost:${port}`;
 const demo = process.env.DEMO_PURCHASES === undefined ? !production : process.env.DEMO_PURCHASES === 'true';
 const gamePort = Number(process.env.GAME_PORT || 8001);
 const gameOrigin = process.env.GAME_ORIGIN || `http://localhost:${gamePort}`;
-const app = createApp({ gameOrigin, contentRoot:process.env.GAME_CONTENT_ROOT || './game-content', dbPath: process.env.DB_PATH || './data/storyplay.sqlite', origin, production, demo });
-if (!production && demo) app.gameServer.listen(gamePort, process.env.HOST || '127.0.0.1', () => console.log(`Game preview: ${gameOrigin}`));
+const adminPreview = process.env.ADMIN_GAME_PREVIEW === 'true';
+const host = process.env.HOST || '127.0.0.1';
+const trustProxyLoopback = process.env.TRUST_PROXY_LOOPBACK === 'true';
+if (trustProxyLoopback && !['127.0.0.1','::1'].includes(host)) throw Error('TRUST_PROXY_LOOPBACK requires HOST=127.0.0.1 or ::1.');
+const app = createApp({ gameOrigin, contentRoot:process.env.GAME_CONTENT_ROOT || './game-content', dbPath: process.env.DB_PATH || './data/storyplay.sqlite', origin, production, demo, adminPreview, trustProxyLoopback });
+if ((!production && demo) || adminPreview) app.gameServer.listen(gamePort, host, () => console.log(`Game preview: ${gameOrigin}`));
 for (const server of [app.server, app.gameServer]) server.on('error', err => { console.error('Server startup failed:', err.code); app.close().finally(() => process.exit(1)); });
-app.server.listen(port, process.env.HOST || '127.0.0.1', () => {
+app.server.listen(port, host, () => {
   console.log(`STORYPLAY: ${origin}`);
   console.log(`Demo purchases: ${demo ? 'ON (no money, no paid entitlement)' : 'OFF'}`);
+  console.log(`Admin game preview: ${adminPreview ? 'ON (admins only)' : 'OFF'}`);
 });
 for (const sig of ['SIGINT', 'SIGTERM']) process.once(sig, () => app.close().then(() => process.exit(0)));

@@ -4,6 +4,7 @@ import { resolve, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes, randomUUID, scrypt, timingSafeEqual, createHash } from 'node:crypto';
 import { promisify } from 'node:util';
+import { isIP } from 'node:net';
 import { openDatabase, publicGame, buildLocation } from './database.mjs';
 import { createAdmin } from './admin.mjs';
 import { createGamePlayer } from './game-player.mjs';
@@ -17,19 +18,25 @@ const scryptOptions = { N: 32768, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
 const staticFiles = new Set(['index.html', 'style.css', 'app.js', 'train.jpg', 'city.webp', 'mountain.jpg', 'admin.html', 'admin.js', 'admin-create.js', 'admin.css']);
 const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.png':'image/png' };
 
-export function createApp({ dbPath = './data/storyplay.sqlite', origin = 'http://localhost:8000', production = false, demo = !production, gameOrigin = 'http://localhost:8001', contentRoot = './game-content' } = {}) {
+export function createApp({ dbPath = './data/storyplay.sqlite', origin = 'http://localhost:8000', production = false, demo = !production, gameOrigin = 'http://localhost:8001', contentRoot = './game-content', adminPreview = false, trustProxyLoopback = false } = {}) {
   const appURL = new URL(origin);
   if (origin !== appURL.origin || !['http:', 'https:'].includes(appURL.protocol)) throw Error('APP_ORIGIN must be a plain http(s) origin without a trailing slash.');
   if (production && appURL.protocol !== 'https:') throw Error('Production requires an HTTPS APP_ORIGIN.');
   if (production && demo) throw Error('Demo purchases cannot be enabled in production.');
+  if (production && adminPreview && (new URL(gameOrigin).protocol !== 'https:' || new URL(gameOrigin).hostname === appURL.hostname)) throw Error('Admin preview requires a separate HTTPS game hostname.');
   const db = openDatabase(dbPath);
   const attempts = new Map();
   let hashesInFlight = 0;
   const player = createGamePlayer({root:contentRoot, origin:gameOrigin, appOrigin:origin,
     locate:id=>buildLocation(db,contentRoot,id), authorized:(hash,id)=> {
-      if(production || !demo) return false;
-      return !!db.prepare(`SELECT 1 FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>? AND (u.role='admin' OR EXISTS(SELECT 1 FROM demo_orders o WHERE o.user_id=u.id AND o.game_id=?))`).get(hash,Date.now(),id);
+      const user=db.prepare(`SELECT u.id,u.role FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>?`).get(hash,Date.now());
+      return canPlay(user,id);
     }});
+  function canPlay(user,id) {
+    if (!user) return false;
+    if (adminPreview && user.role==='admin') return true;
+    return !production && demo && (user.role==='admin' || !!db.prepare('SELECT 1 FROM demo_orders WHERE user_id=? AND game_id=?').get(user.id,id));
+  }
   const cookieName = production ? '__Host-storyplay_session' : 'storyplay_session';
   const cookie = (token, maxAge = ttl / 1000) => `${cookieName}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${production ? '; Secure' : ''}`;
   function rawToken(req) {
@@ -50,7 +57,11 @@ export function createApp({ dbPath = './data/storyplay.sqlite', origin = 'http:/
   function limit(req) {
     const now = Date.now();
     for (const [key, entry] of attempts) if (entry.until <= now) attempts.delete(key);
-    const ip = req.socket.remoteAddress || 'unknown'; // Never trust client-supplied forwarding headers.
+    const peer = req.socket.remoteAddress || 'unknown';
+    // The supplied Caddy config overwrites X-Real-IP, and Node binds to loopback.
+    // Keep this opt-in: arbitrary external peers must never control the rate-limit key.
+    const forwarded=req.headers['x-real-ip'];
+    const ip = trustProxyLoopback && ['127.0.0.1','::1','::ffff:127.0.0.1'].includes(peer) && typeof forwarded==='string' && isIP(forwarded) ? forwarded : peer;
     let a = attempts.get(ip);
     if (!a) { if (attempts.size >= 10000) throw problem(429, 'Түр хүлээгээд дахин оролдоно уу.'); a = { count: 0, until: now + 15 * 60 * 1000 }; attempts.set(ip, a); }
     if (++a.count > 20) throw problem(429, 'Олон удаа оролдлоо. 15 минутын дараа дахин оролдоно уу.');
@@ -72,7 +83,7 @@ export function createApp({ dbPath = './data/storyplay.sqlite', origin = 'http:/
   function orders(user) {
     return db.prepare('SELECT id,game_id AS gameId,amount,created_at AS createdAt FROM demo_orders WHERE user_id=? ORDER BY created_at DESC,id DESC').all(user.id).map(o => ({ ...o, mode: 'demo', status: 'simulated', currency: 'MNT' }));
   }
-  const admin=createAdmin({db,contentRoot,requireUser,body,json,player});
+  const admin=createAdmin({db,contentRoot,requireUser,body,json,player,previewEnabled:adminPreview||(!production&&demo)});
   const server = createServer(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'same-origin');
@@ -85,11 +96,12 @@ export function createApp({ dbPath = './data/storyplay.sqlite', origin = 'http:/
         if (req.method === 'POST') {
           if (req.headers.origin !== origin || req.headers['sec-fetch-site'] === 'cross-site') throw problem(403, 'Хүсэлтийн эх сурвалж зөвшөөрөгдөөгүй.');
         } else if (req.method !== 'GET') throw problem(405, 'Энэ үйлдэл дэмжигдэхгүй.');
+        if(path==='/api/health'&&req.method==='GET') { db.prepare('SELECT 1').get();return json(res,200,{ok:true}); }
         if(path.startsWith('/api/admin/'))return await admin.handle(req,res,url);
         if (path === '/api/games' && req.method === 'GET') {
           const user=session(req);
           const rows=db.prepare(`SELECT * FROM games WHERE published=1 OR EXISTS(SELECT 1 FROM demo_orders o WHERE o.game_id=games.id AND o.user_id=?) ORDER BY created_at DESC,id`).all(user?.id||'');
-          return json(res,200,{games:await Promise.all(rows.map(async row=>({...publicGame(row),playable:!!row.real_build&&demo&&!production&&await player.ready(row.id)})))});
+          return json(res,200,{games:await Promise.all(rows.map(async row=>({...publicGame(row),playable:!!row.real_build&&((demo&&!production)||(adminPreview&&user?.role==='admin'))&&await player.ready(row.id)})))});
         }
         const gameRoute=/^\/api\/games\/([a-z0-9-]+)\/(cover|launch)$/.exec(path);
         if(gameRoute){
@@ -106,9 +118,8 @@ export function createApp({ dbPath = './data/storyplay.sqlite', origin = 'http:/
           }
           if(action==='launch'&&req.method==='POST') {
             const user=requireUser(req);await body(req);
-            if(production||!demo)throw problem(403,'Туршилтын тоглох горим идэвхгүй байна.');
+            if(!canPlay(user,id))throw problem(403,production||!demo?'Тоглож шалгах админ эрх шаардлагатай.':'Эхлээд туршилтын сандаа нэмнэ үү.');
             if(!await player.ready(id))throw problem(409,'Тоглоомын web build-ийг эхлээд оруулна уу.');
-            if(user.role!=='admin'&&!db.prepare('SELECT 1 FROM demo_orders WHERE user_id=? AND game_id=?').get(user.id,id))throw problem(403,'Эхлээд туршилтын сандаа нэмнэ үү.');
             return json(res,200,{url:player.ticket(secretHash(rawToken(req)),id)});
           }
         }

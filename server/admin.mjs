@@ -61,7 +61,7 @@ function extract(archive,parent,id) {
     worker.once('exit',()=>{clearTimeout(timeout);reject(problem(422,'Build боловсруулах боломжгүй.'));});
   });
 }
-export function createAdmin({db,contentRoot,requireUser,body,json,player}) {
+export function createAdmin({db,contentRoot,requireUser,body,json,player,previewEnabled=false}) {
   let building=null;
   function requireAdmin(req) {const u=requireUser(req);if(u.role!=='admin')throw problem(403,'Админ эрх шаардлагатай.');return u;}
   const getGame=id=>{const row=db.prepare('SELECT * FROM games WHERE id=?').get(id);if(!row)throw problem(404,'Тоглоом олдсонгүй.');return row;};
@@ -70,7 +70,7 @@ export function createAdmin({db,contentRoot,requireUser,body,json,player}) {
     if(path==='/api/admin/summary'&&req.method==='GET')return json(res,200,{
       games:db.prepare('SELECT count(*) AS n FROM games').get().n,
       users:db.prepare('SELECT count(*) AS n FROM users').get().n,
-      orders:db.prepare('SELECT count(*) AS n FROM demo_orders').get().n,mode:'demo'
+      orders:db.prepare('SELECT count(*) AS n FROM demo_orders').get().n,mode:'demo',previewEnabled
     });
     if(path==='/api/admin/games'&&req.method==='GET'){
       const rows=db.prepare('SELECT * FROM games ORDER BY created_at DESC,id').all();

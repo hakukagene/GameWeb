@@ -1,0 +1,12 @@
+# Use two hostnames under the same registered domain for SameSite cookies.
+# Keep DNS records unproxied; this configuration trusts the direct client IP.
+{$SITE_HOST} {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:8000 {
+		header_up X-Real-IP {remote_host}
+	}
+}
+
+{$GAME_HOST} {
+	reverse_proxy 127.0.0.1:8001
+}

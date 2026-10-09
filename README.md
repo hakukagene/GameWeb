@@ -2,6 +2,10 @@
 
 Монгол хэл дээрх Ren’Py тоглоомын дэлгүүр. Энэ шатанд хэрэглэгчийн бүртгэл, нэвтрэлт, серверт хадгалагддаг **туршилтын** сан, захиалгын түүх болон админ удирдлага ажиллана.
 
+## DigitalOcean дээр байрлуулах — v0.5.0
+
+[Droplet байршуулалтын заавар](deploy/digitalocean/README.md): Docker Compose, HTTPS, байнгын database/game-content хадгалалт, дахин асаалт болон нөөцлөх скрипт. Production-д админ **Тоглож шалгах** товчоор build-ээ шалгаж болно; бодит худалдан авсан хэрэглэгчийн эрх хараахан холбогдоогүй. Эдгээр файлыг татах нь өөрөө cloud сервер үүсгэхгүй.
+
 ## Админ удирдлага — v0.4.0
 
 Серверээ зогсоогоод шинэ код татна. Өмнө бүртгүүлсэн өөрийн имэйлд админ эрх олгоно:
@@ -70,7 +74,7 @@ Windows эсвэл mapped drive дээр хавтасны `rename` үйлдэл 
 - Энэ build сервер ассан компьютер дээр байх ёстой. Шинэ clone бүрт ZIP импортлоно. Сервер байршуулахдаа тусдаа private content storage-д шилжүүлнэ.
 - Тоглох хүсэлт 60 секундийн нэг удаагийн ticket ашиглана. Тоглоомын файл бүрд 4 цагийн preview grant болон үндсэн нэвтрэлтийн session шалгана. Гарахад дараагийн файл хүсэлт хаагдана; аль хэдийн браузерт ачаалсан өгөгдлийг буцааж устгах DRM биш.
 - Ren’Py код нь дэлгүүрээс өөр origin-д iframe дотор ажиллана. WebAssembly MIME, media Range requests дэмжинэ. PWA service worker бүртгэл/түгээлтийг идэвхгүй болгосон; offline cache-аар эрхийн шалгалт алгасахгүй.
-- **Зөвхөн development + demo горимд тоглоно.** Production-д үнэгүй demo эрхээр энэ build нээгдэхгүй. Бодит төлбөрийн эрх дараагийн шатанд хийгдэнэ.
+- Development + demo горимд туршилтын сангаар тоглоно. Production-д `ADMIN_GAME_PREVIEW=true` үед зөвхөн админ **Тоглож шалгах** товчоор нээнэ; HTTPS ба тусдаа game hostname шаардлагатай. Production-д demo захиалга тоглох эрх болохгүй. Бодит төлбөрийн эрх дараагийн шатанд хийгдэнэ.
 - Save/Load нь Ren’Py-ийн браузерийн хадгалалт. Cloud save болон account тусгаарласан save биш; нэг браузерийг хоёр хэрэглэгч хуваалцвал game save хамт харагдаж болно. Origin-оо солих, browser storage цэвэрлэхэд save нөлөөлнө. Ren’Py цэсийн Import/Export Saves ашиглаж болно.
 - Browser дотор Python `requests`, `threading`, зарим видео функц дэмжигдэхгүй. Платформ холбогдсон ч тоглоомын ийм функцүүдэд тусдаа web тохируулга шаардагдаж болно.
 
@@ -146,6 +150,8 @@ npm.cmd start
 | `DB_PATH` | `./data/storyplay.sqlite`; тогтмол хадгалалттай байрлал |
 | `NODE_ENV` | `production` үед HTTPS origin заавал шаардлагатай |
 | `DEMO_PURCHASES` | Development үед default `true`; production үед default `false` |
+| `ADMIN_GAME_PREVIEW` | Default `false`; админд build тоглож шалгах боломж нээнэ |
+| `TRUST_PROXY_LOOPBACK` | Default `false`; loopback Caddy proxy-гийн дарж бичсэн `X-Real-IP`-г ашиглана |
 
 Production үед demo-г `true` болговол сервер асахгүй. Production session cookie нь `Secure`, `HttpOnly`, `SameSite=Strict`, `__Host-` prefix-тэй. Хөгжүүлэлтийн HTTP cookie мөн HttpOnly, SameSite=Strict. Нэвтрэлтээр session шинэчлэгдэж, гарахад хүчингүй болно. Өөрчлөлт хийдэг API нь яг зөв `Origin` шаарддаг. Auth/metadata нь JSON, upload нь raw binary body авна. Нууц үг браузерийн storage-д хадгалагдахгүй.
 

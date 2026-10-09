@@ -39,6 +39,7 @@ function renderEditor(){
       <p class="admin-file-selection" data-build-status aria-live="polite">${isNew?'ZIP-ээ сонгох эсвэл тоглоомоо ноорог болгон хадгалж болно.':''}</p>
       <button class="btn" type="submit" ${formOwner}>${isNew?'Тоглоом үүсгээд файлуудыг оруулах':g.buildReady?'Шинэ build оруулах':'Build оруулах'}</button>
     ${isNew?'</div>':'</form>'}
+    ${!isNew&&g.buildReady&&summary.previewEnabled?`<button class="btn secondary" type="button" data-preview="${esc(g.id)}">Тоглож шалгах →</button><p>Админ эрхээр нээнэ. Бодит худалдан авалт үүсгэхгүй.</p>`:''}
     ${isNew?'':`<ul class="admin-build-list">${builds?.legacyBuild?'<li><div>Өмнө импортлосон build<small>Командаар оруулсан хувилбар</small></div><span class="admin-status live">Идэвхтэй</span></li>':''}${(builds?.builds||[]).map(b=>`<li><div><strong>${esc(b.version)}</strong><small>${date(b.createdAt)} · ${(b.bytes/1024/1024).toFixed(1)} MB · ${b.files} файл</small></div><span class="admin-status ${b.id===builds.activeBuild?'live':''}">${b.id===builds.activeBuild?'Идэвхтэй':'Хадгалагдсан'}</span></li>`).join('')}</ul>`}
     </section>`;
   frame(`${isNew?'<p class="admin-create-hint">Мэдээллээ бөглөөд баруун талд нүүр зураг, Web ZIP-ээ сонгоно. «Тоглоом үүсгэх» дарахад сонгосон файлууд хамт хадгалагдана.</p>':''}
@@ -77,6 +78,7 @@ main.addEventListener('click',async e=>{
   const button=e.target.closest('button');if(!button||busy)return;
   try{
     if(button.hasAttribute('data-edit'))await edit(button.dataset.edit);
+    else if(button.hasAttribute('data-preview')){const result=await api('/games/'+encodeURIComponent(button.dataset.preview)+'/launch',{});window.location.assign(result.url);}
     else if(button.hasAttribute('data-new'))await edit('__new__');
     else if(button.hasAttribute('data-back')){editing=null;await refresh();render();}
     else if(button.hasAttribute('data-tab')){tab=button.dataset.tab;editing=null;page=1;query='';gameFilter='';if(tab!=='games')await fetchList();render();}
