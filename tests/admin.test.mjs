@@ -60,7 +60,7 @@ test('admin requires server-granted role; users and orders expose paginated non-
 
 test('game metadata validation, draft visibility, cover upload and price changes persist',async t=>{
   const {app,request,owner,customer,root,dbPath,ownerId}=await boot(t);app.db.prepare("UPDATE users SET role='admin' WHERE id=?").run(ownerId);
-  for(const invalid of [{...metadata,id:'../oops'},{...metadata,price:-1},{...metadata,price:1.1},{...metadata,active_build:'secret'},{...metadata,published:'true'}])assert.equal((await request('/api/admin/games',{cookie:owner,data:invalid})).status,400);
+  for(const invalid of [{...metadata,id:'../oops'},{...metadata,id:123},{...metadata,id:['another-game']},{...metadata,price:-1},{...metadata,price:1.1},{...metadata,active_build:'secret'},{...metadata,published:'true'}])assert.equal((await request('/api/admin/games',{cookie:owner,data:invalid})).status,400);
   const created=await request('/api/admin/games',{cookie:owner,data:metadata});assert.equal(created.status,201);let game=created.body.game;
   assert.equal((await request('/api/admin/games',{cookie:owner,data:metadata})).status,409);
   assert.ok(!(await request('/api/games')).body.games.some(g=>g.id===game.id));

@@ -18,7 +18,7 @@ function metadata(data,creating) {
   if(!Number.isSafeInteger(data.price)||data.price<0||data.price>1000000000)throw problem(400,'Үнэ 0–1,000,000,000 хооронд бүхэл төгрөг байна.');
   if(typeof data.published!=='boolean')throw problem(400,'Нийтлэх төлөв буруу байна.');
   if(!creating&&!Number.isSafeInteger(data.revision))throw problem(400,'Хуудсаа шинэчлээд дахин оролдоно уу.');
-  if(creating&&(!idPattern.test(data.id||'')||data.id.length>64||/^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/.test(data.id)))throw problem(400,'ID: 1–64 жижиг латин үсэг, тоо, дундуур зураас ашиглана уу.');
+  if(creating&&(typeof data.id!=='string'||!idPattern.test(data.id)||data.id.length>64||/^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/.test(data.id)))throw problem(400,'ID: 1–64 жижиг латин үсэг, тоо, дундуур зураас ашиглана уу.');
   return {...result,id:data.id,price:data.price,published:Number(data.published),revision:data.revision};
 }
 function pageInfo(url) {
