@@ -14,7 +14,7 @@ const ttl = 7 * 24 * 60 * 60 * 1000;
 const secretHash = token => createHash('sha256').update(token).digest('hex');
 const problem = (status, message) => Object.assign(new Error(message), { status });
 const scryptOptions = { N: 32768, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
-const staticFiles = new Set(['index.html', 'style.css', 'app.js', 'train.jpg', 'city.webp', 'mountain.jpg', 'admin.html', 'admin.js', 'admin.css']);
+const staticFiles = new Set(['index.html', 'style.css', 'app.js', 'train.jpg', 'city.webp', 'mountain.jpg', 'admin.html', 'admin.js', 'admin-create.js', 'admin.css']);
 const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.png':'image/png' };
 
 export function createApp({ dbPath = './data/storyplay.sqlite', origin = 'http://localhost:8000', production = false, demo = !production, gameOrigin = 'http://localhost:8001', contentRoot = './game-content' } = {}) {

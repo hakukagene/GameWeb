@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { createApp } from '../server/app.mjs';
 import { openDatabase } from '../server/database.mjs';
+import { createGameWithFiles } from '../dist/admin-create.js';
 const origin='http://localhost:8000';
 const required=['index.html','renpy.js','renpy-pre.js','renpy.wasm','renpy.data','game.zip'];
 // Stored ZIP records use independently known CRC32 values for one-byte fixtures.
@@ -117,4 +118,42 @@ test('v1 database migration preserves accounts, sessions, orders and game prices
     INSERT INTO users VALUES('u','old@example.com','Old','hash','salt',1);INSERT INTO sessions VALUES('token','u',9999999999999);
     INSERT INTO games VALUES('bolzoo',7300);INSERT INTO demo_orders VALUES('o','u','bolzoo',7300,1);PRAGMA user_version=1;`);db.close();
   db=openDatabase(path);try{assert.equal(db.prepare('SELECT count(*) AS n FROM demo_orders').get().n,1);assert.equal(db.prepare('SELECT role FROM users').get().role,'user');assert.equal(db.prepare('SELECT count(*) AS n FROM sessions').get().n,1);assert.equal(db.prepare("SELECT price FROM games WHERE id='bolzoo'").get().price,7300);assert.equal(db.prepare('PRAGMA user_version').get().user_version,2);}finally{db.close();}
+});
+
+test('new-game workflow saves selected cover and ZIP before publishing, and preserves failed uploads as drafts',async t=>{
+  const {app,request,owner,ownerId}=await boot(t);
+  app.db.prepare("UPDATE users SET role='admin' WHERE id=?").run(ownerId);
+  const created=[];
+  const decode=result=>{if(result.status>=400)throw Error(result.body.error);return result.body;};
+  const api=async(path,data)=>decode(await request('/api'+path,{cookie:owner,data}));
+  const upload=async(path,file,type)=>{
+    const gameId=path.split('/')[3];
+    assert.ok(!(await request('/api/games')).body.games.some(g=>g.id===gameId),'not published before all selected files succeed');
+    return decode(await request('/api'+path,{cookie:owner,raw:Buffer.from(await file.arrayBuffer()),type}));
+  };
+  const onCreated=game=>{created.push(game.id);assert.equal(game.published,false);};
+  const coverFile=new File([Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXioAAAAASUVORK5CYII=','base64')],'cover.png',{type:'image/png'});
+  const buildFile=new File([zip()],'game-web.zip',{type:'application/zip'});
+  const game=await createGameWithFiles({payload:{...metadata,published:true},coverFile,buildFile,buildVersion:'2.5',api,upload,onCreated});
+  assert.equal(game.published,true);assert.equal(game.length,'2.5');assert.match(game.image,/\/cover/);
+  const storefront=(await request('/api/games')).body.games.find(g=>g.id===metadata.id);
+  assert.equal(storefront.playable,true);assert.equal(storefront.price,12500);
+  assert.equal((await request(game.image)).headers.get('content-type'),'image/png');
+
+  const failedId='retry-story';
+  await assert.rejects(createGameWithFiles({payload:{...metadata,id:failedId,published:true},coverFile,buildFile:new File(['broken'],'broken.zip'),buildVersion:'1.0',api,upload,onCreated}),error=>error.createdGameId===failedId);
+  const draft=app.db.prepare('SELECT * FROM games WHERE id=?').get(failedId);
+  assert.equal(draft.published,0);assert.ok(draft.cover_file);assert.equal(draft.active_build,null);
+  assert.deepEqual(created,[metadata.id,failedId]);
+  const retried=await upload(`/admin/games/${failedId}/builds?version=1.1`,buildFile,'application/zip');
+  const {id,...info}=metadata;
+  await api(`/admin/games/${failedId}`,{...info,version:'1.1',revision:retried.game.revision,published:true});
+  assert.equal(app.db.prepare('SELECT count(*) AS n FROM games WHERE id=?').get(failedId).n,1);
+  assert.equal((await request('/api/games')).body.games.find(g=>g.id===failedId).playable,true);
+
+  await assert.rejects(createGameWithFiles({payload:{...metadata,id:'too-large'},coverFile:{size:6*1024*1024},api,upload,onCreated}),/5 MB/);
+  assert.equal(app.db.prepare("SELECT id FROM games WHERE id='too-large'").get(),undefined);
+  const emptyDraft=await createGameWithFiles({payload:{...metadata,id:'later-files'},api,upload,onCreated});
+  assert.equal(emptyDraft.published,false);assert.equal(emptyDraft.id,'later-files');
+  const script=await request('/admin-create.js');assert.equal(script.status,200);assert.match(script.headers.get('content-type'),/javascript/);
 });

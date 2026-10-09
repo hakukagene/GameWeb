@@ -1,3 +1,4 @@
+import { createGameWithFiles } from './admin-create.js';
 const main=document.querySelector('#admin-main');
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=n=>Number(n).toLocaleString('en-US')+' ₮';
@@ -20,7 +21,38 @@ function renderGames(){
 }
 function renderEditor(){
   const isNew=editing==='__new__',g=isNew?{id:'',title:'',en:'',genre:'Визуал новел',desc:'',price:0,length:'1.0',published:false}:gameById(editing);
-  frame(`<div class="admin-editor"><section class="admin-panel"><h2>Тоглоомын мэдээлэл</h2><p>Хадгалсан мэдээлэл дэлгүүр дээр шинэчлэгдэнэ.</p><form id="game-form" class="admin-form"><label>Тоглоомын ID<input name="id" value="${esc(g.id)}" ${isNew?'required pattern="[a-z0-9]+(-[a-z0-9]+)*" maxlength="64"':'disabled'} placeholder="my-new-game"><small>ID-г үүсгэсний дараа өөрчлөхгүй.</small></label><label>Нэр<input name="title" required maxlength="120" value="${esc(g.title)}"></label><label>Нүүрэн дээр харагдах нэр<input name="en" required maxlength="120" value="${esc(g.en)}"><small>Монгол эсвэл англи нэр бичиж болно.</small></label><div class="admin-form-grid"><label>Төрөл<input name="genre" required maxlength="60" value="${esc(g.genre)}" list="genres"><datalist id="genres"><option>Визуал новел</option><option>Нууцлаг</option><option>Драм</option><option>Адал явдал</option><option>Романтик</option></datalist></label><label>Үнэ · ₮<input name="price" type="number" required min="0" max="1000000000" step="1" value="${g.price}"></label></div><label>Тайлбар<textarea name="desc" required maxlength="4000">${esc(g.desc)}</textarea></label><label>${g.realBuild===false?'Хугацаа / хувилбар':'Хувилбар'}<input name="version" required maxlength="40" value="${esc(g.length)}"></label><label class="check"><input type="checkbox" name="published" ${g.published?'checked':''}>Дэлгүүрт нийтлэх</label><button class="btn" type="submit">${isNew?'Тоглоом үүсгэх':'Мэдээлэл хадгалах'}</button></form></section><div>${isNew?'<section class="admin-panel"><h2>Дараагийн алхам</h2><p>Тоглоомоо үүсгээд нүүр зураг болон Ren’Py web ZIP-ээ оруулна. Шинэ тоглоом эхлээд ноорог төлөвтэй байна.</p></section>':`<section class="admin-panel"><h2>Нүүр зураг</h2><img class="admin-preview" src="/${esc(g.image).replace(/^\//,'')}" alt="${esc(g.title)}"><form id="cover-form" class="admin-form"><label>Зураг сонгох<input type="file" name="file" accept="image/png,image/jpeg,image/webp" required><small>PNG, JPG, WebP · 5 MB хүртэл · Хэвтээ зураг тохиромжтой.</small></label><button class="btn secondary" type="submit">Зураг оруулах</button></form></section><section class="admin-panel"><h2>Тоглоомын web build</h2><p>${g.buildReady?'Тоглоомын файл бэлэн. Шинэ хувилбар оруулахад хуучин build хадгалагдана.':'Ren’Py-ээс гаргасан web ZIP-ээ оруулна уу.'}</p><form id="build-form" class="admin-form"><label>Оруулах хувилбар<input name="version" value="${esc(g.length)}" maxlength="40" required></label><label>Web ZIP<input type="file" name="file" accept=".zip,application/zip" required><small>512 MB хүртэл. Бүх файл шалгагдсаны дараа идэвхжинэ.</small></label><button class="btn" type="submit">${g.buildReady?'Шинэ build оруулах':'Build оруулах'}</button></form><ul class="admin-build-list">${builds?.legacyBuild?'<li><div>Өмнө импортлосон build<small>Командаар оруулсан хувилбар</small></div><span class="admin-status live">Идэвхтэй</span></li>':''}${(builds?.builds||[]).map(b=>`<li><div><strong>${esc(b.version)}</strong><small>${date(b.createdAt)} · ${(b.bytes/1024/1024).toFixed(1)} MB · ${b.files} файл</small></div><span class="admin-status ${b.id===builds.activeBuild?'live':''}">${b.id===builds.activeBuild?'Идэвхтэй':'Хадгалагдсан'}</span></li>`).join('')}</ul></section>`}</div></div>`);
+  const formOwner=isNew?'form="game-form"':'';
+  const coverPanel=`<section class="admin-panel"><h2>Нүүр зураг</h2>
+    <p>${isNew?'Зургаа одоо сонгож болно. Тоглоом үүсгэхэд хамт оруулна.':'Дэлгүүр дээр харагдах нүүр зургаа солино уу.'}</p>
+    <div class="admin-preview-empty" ${isNew?'':'hidden'}>Нүүр зураг сонгоогүй</div>
+    <img class="admin-preview" ${isNew?'hidden':`src="/${esc(g.image).replace(/^\//,'')}"`} alt="Нүүр зургийн урьдчилсан харагдац">
+    ${isNew?'<div class="admin-form">':'<form id="cover-form" class="admin-form">'}
+      <label>Зураг сонгох<input type="file" name="${isNew?'coverFile':'file'}" ${formOwner} data-cover-input accept="image/png,image/jpeg,image/webp" ${isNew?'':'required'}><small>PNG, JPG, WebP · 5 MB хүртэл · Хэвтээ зураг тохиромжтой.</small></label>
+      <p class="admin-file-selection" data-cover-status aria-live="polite">${isNew?'Зураг сонгох нь сонголттой. Дараа нь нэмж болно.':''}</p>
+      ${isNew?'</div>':'<button class="btn secondary" type="submit">Зураг оруулах</button></form>'}
+    </section>`;
+  const buildPanel=`<section class="admin-panel admin-build-panel"><h2>Тоглоомын web build</h2>
+    <p>${isNew?'Ren’Py web ZIP-ээ энд сонгоно. Тоглоом үүсгэхэд шалгаж, суулгана.':g.buildReady?'Тоглоомын файл бэлэн. Шинэ хувилбар оруулахад хуучин build хадгалагдана.':'Ren’Py-ээс гаргасан web ZIP-ээ оруулна уу.'}</p>
+    ${isNew?'<div class="admin-form">':'<form id="build-form" class="admin-form">'}
+      <label>Оруулах хувилбар<input name="${isNew?'buildVersion':'version'}" ${formOwner} value="${esc(g.length)}" maxlength="40" required></label>
+      <label>Web ZIP<input type="file" name="${isNew?'buildFile':'file'}" ${formOwner} data-build-input accept=".zip,application/zip" ${isNew?'':'required'}><small>512 MB хүртэл. Бүх файл шалгагдсаны дараа идэвхжинэ.</small></label>
+      <p class="admin-file-selection" data-build-status aria-live="polite">${isNew?'ZIP-ээ сонгох эсвэл тоглоомоо ноорог болгон хадгалж болно.':''}</p>
+      <button class="btn" type="submit" ${formOwner}>${isNew?'Тоглоом үүсгээд файлуудыг оруулах':g.buildReady?'Шинэ build оруулах':'Build оруулах'}</button>
+    ${isNew?'</div>':'</form>'}
+    ${isNew?'':`<ul class="admin-build-list">${builds?.legacyBuild?'<li><div>Өмнө импортлосон build<small>Командаар оруулсан хувилбар</small></div><span class="admin-status live">Идэвхтэй</span></li>':''}${(builds?.builds||[]).map(b=>`<li><div><strong>${esc(b.version)}</strong><small>${date(b.createdAt)} · ${(b.bytes/1024/1024).toFixed(1)} MB · ${b.files} файл</small></div><span class="admin-status ${b.id===builds.activeBuild?'live':''}">${b.id===builds.activeBuild?'Идэвхтэй':'Хадгалагдсан'}</span></li>`).join('')}</ul>`}
+    </section>`;
+  frame(`${isNew?'<p class="admin-create-hint">Мэдээллээ бөглөөд баруун талд нүүр зураг, Web ZIP-ээ сонгоно. «Тоглоом үүсгэх» дарахад сонгосон файлууд хамт хадгалагдана.</p>':''}
+    <div class="admin-editor"><section class="admin-panel"><h2>Тоглоомын мэдээлэл</h2><p>Хадгалсан мэдээлэл дэлгүүр дээр шинэчлэгдэнэ.</p>
+    <form id="game-form" class="admin-form">
+      <label>Тоглоомын ID<input name="id" value="${esc(g.id)}" ${isNew?'required pattern="[a-z0-9]+(-[a-z0-9]+)*" maxlength="64"':'disabled'} placeholder="my-new-game"><small>ID-г үүсгэсний дараа өөрчлөхгүй.</small></label>
+      <label>Нэр<input name="title" required maxlength="120" value="${esc(g.title)}"></label>
+      <label>Нүүрэн дээр харагдах нэр<input name="en" required maxlength="120" value="${esc(g.en)}"><small>Монгол эсвэл англи нэр бичиж болно.</small></label>
+      <div class="admin-form-grid"><label>Төрөл<input name="genre" required maxlength="60" value="${esc(g.genre)}" list="genres"><datalist id="genres"><option>Визуал новел</option><option>Нууцлаг</option><option>Драм</option><option>Адал явдал</option><option>Романтик</option></datalist></label><label>Үнэ · ₮<input name="price" type="number" required min="0" max="1000000000" step="1" value="${g.price}"></label></div>
+      <label>Тайлбар<textarea name="desc" required maxlength="4000">${esc(g.desc)}</textarea></label>
+      <label>${g.realBuild===false?'Хугацаа / хувилбар':'Хувилбар'}<input name="version" required maxlength="40" value="${esc(g.length)}"></label>
+      <label class="check"><input type="checkbox" name="published" ${g.published?'checked':''}>Дэлгүүрт нийтлэх</label>
+      <button class="btn" type="submit">${isNew?'Тоглоом үүсгэх':'Мэдээлэл хадгалах'}</button>
+    </form></section><div>${coverPanel}${buildPanel}</div></div>`);
 }
 function renderList(){
   const users=tab==='users',items=list?.[tab]||[],total=list?.total||0,pages=Math.max(1,Math.ceil(total/25));
@@ -29,7 +61,7 @@ function renderList(){
 function render(){if(editing)renderEditor();else if(tab==='games')renderGames();else renderList();}
 async function fetchList(){list=await api(`/admin/${tab}?page=${page}&q=${encodeURIComponent(query)}&gameId=${encodeURIComponent(gameFilter)}`);}
 async function edit(id){editing=id;builds=id==='__new__'?null:await api('/admin/games/'+id+'/builds');render();window.scrollTo(0,0);}
-function lock(value){busy=value;main.querySelectorAll('form, .admin-tabs').forEach(e=>e.inert=value);main.querySelectorAll('button[data-back],button[data-new],button[data-refresh]').forEach(e=>e.disabled=value);}
+function lock(value){busy=value;main.querySelectorAll('form, .admin-tabs, .admin-editor').forEach(e=>e.inert=value);main.querySelectorAll('button[data-back],button[data-new],button[data-refresh]').forEach(e=>e.disabled=value);}
 function upload(path,file,type){
   const panel=document.querySelector('#upload-status');panel.classList.add('active');panel.querySelector('p').textContent='Файл оруулж байна…';
   return new Promise((resolve,reject)=>{
@@ -52,21 +84,46 @@ main.addEventListener('click',async e=>{
     else if(button.hasAttribute('data-refresh')){await refresh();render();}
   }catch(e){error(e.message);}
 });
+main.addEventListener('change',e=>{
+  const input=e.target,cover=input.matches('[data-cover-input]');
+  if(!cover&&!input.matches('[data-build-input]'))return;
+  const file=input.files?.[0],panel=input.closest('.admin-panel');
+  panel.querySelector(cover?'[data-cover-status]':'[data-build-status]').textContent=file?`${file.name} · ${(file.size/1024/1024).toFixed(1)} MB`:'';
+  if(cover&&file&&file.size<=5*1024*1024&&['image/png','image/jpeg','image/webp'].includes(file.type)){
+    const reader=new FileReader();
+    reader.onload=()=>{if(input.isConnected&&input.files[0]===file){const preview=panel.querySelector('.admin-preview');preview.src=reader.result;preview.hidden=false;panel.querySelector('.admin-preview-empty').hidden=true;}};
+    reader.readAsDataURL(file);
+  }
+});
 main.addEventListener('submit',async e=>{
   e.preventDefault();if(busy)return;const form=e.target,data=new FormData(form);error('');
   if(form.id==='search-form'){query=String(data.get('q')||'');gameFilter=String(data.get('gameId')||'');page=1;try{if(tab!=='games')await fetchList();render();}catch(e){error(e.message);}return;}
   lock(true);
   try{
     if(form.id==='game-form'){
-      const creating=editing==='__new__',payload=Object.fromEntries(data);payload.price=Number(payload.price);payload.published=data.has('published');if(!creating)payload.revision=gameById(editing).revision;
-      const result=await api('/admin/games'+(creating?'':'/'+editing),payload);await refresh();await edit(result.game.id);notice(creating?'Тоглоом үүслээ. Одоо зураг, build-ээ оруулна уу.':'Мэдээлэл хадгалагдлаа.');
+      const creating=editing==='__new__';
+      const {coverFile,buildFile,buildVersion,...payload}=Object.fromEntries(data);
+      payload.price=Number(payload.price);payload.published=data.has('published');
+      let game;
+      if(creating){
+        game=await createGameWithFiles({payload,coverFile,buildFile,buildVersion,api,upload,onCreated:g=>{editing=g.id;games.push(g);builds=null;render();lock(true);}});
+      }else{
+        payload.revision=gameById(editing).revision;
+        ({game}=await api('/admin/games/'+editing,payload));
+      }
+      await refresh();await edit(game.id);notice(creating?'Тоглоом болон сонгосон файлууд хадгалагдлаа.':'Мэдээлэл хадгалагдлаа.');
     }else if(form.id==='cover-form'||form.id==='build-form'){
       const file=data.get('file'),cover=form.id==='cover-form';
       if(!file?.size)throw Error('Файлаа сонгоно уу.');if(file.size>(cover?5:512)*1024*1024)throw Error(cover?'Зураг 5 MB-аас бага байна.':'ZIP 512 MB-аас бага байна.');
       const suffix=cover?'cover':'builds?version='+encodeURIComponent(data.get('version').trim());
       await upload('/admin/games/'+editing+'/'+suffix,file,cover?file.type:'application/zip');await refresh();await edit(editing);notice(cover?'Нүүр зураг шинэчлэгдлээ.':'Шинэ build шалгагдаж, идэвхжлээ.');
     }
-  }catch(e){error(e.message);document.querySelector('#upload-status')?.classList.remove('active');}
+  }catch(e){
+    if(e.createdGameId){
+      try{await refresh();await edit(e.createdGameId);}catch{render();}
+    }
+    error(e.message);document.querySelector('#upload-status')?.classList.remove('active');
+  }
   finally{lock(false);}
 });
 window.addEventListener('beforeunload',e=>{if(busy){e.preventDefault();e.returnValue='';}});
