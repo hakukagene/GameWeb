@@ -1,6 +1,6 @@
 {
   "name": "storyplay-gameweb",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -9,7 +9,8 @@
   "scripts": {
     "start": "node server/index.mjs",
     "test": "node --test tests/*.test.mjs",
-    "check": "node --check server/index.mjs && node --check server/app.mjs && node --check dist/app.js && node --check server/game-player.mjs && node --check scripts/import-bolzoo.mjs",
-    "import:bolzoo": "node scripts/import-bolzoo.mjs"
+    "check": "node scripts/check.mjs",
+    "import:bolzoo": "node scripts/import-bolzoo.mjs",
+    "admin:set": "node scripts/admin-user.mjs"
   }
 }

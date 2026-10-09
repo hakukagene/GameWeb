@@ -31,7 +31,8 @@ export function installStagedBuild(staging,target,{renameDirectory=renameSync,co
   catch(error) { return {installation:'copy',warning:`Build installed, but temporary folder remains: ${staging} (${error.code}). It can be removed after closing programs that are using it.`}; }
   return {installation:'copy'};
 }
-export function importBolzoo(archive, contentRoot) {
+export function importGame(archive, contentRoot, gameId='bolzoo') {
+  if(!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(gameId)||gameId.length>80||/^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(gameId))throw Error('Invalid game directory.');
   const zip=readFileSync(archive);if(zip.length>512*1024*1024)throw Error('ZIP exceeds 512 MB.');
   let end=-1;
   for(let i=zip.length-22;i>=Math.max(0,zip.length-65557);i--)if(zip.readUInt32LE(i)===0x06054b50&&i+22+zip.readUInt16LE(i+20)===zip.length){end=i;break;}
@@ -60,8 +61,8 @@ export function importBolzoo(archive, contentRoot) {
     if(roots.length!==1)throw Error('Web build index.html not found.');prefix=roots[0].name.slice(0,-10);
   }
   for(const required of ['index.html','renpy.js','renpy-pre.js','renpy.wasm','renpy.data','game.zip'])if(!entries.some(e=>e.name===prefix+required&&e.size>0))throw Error('Missing Ren’Py build file: '+required);
-  mkdirSync(contentRoot,{recursive:true});const target=join(contentRoot,'bolzoo');
-  if(existsSync(target))throw Error('game-content/bolzoo already exists. Move it to a backup folder before importing an update.');
+  mkdirSync(contentRoot,{recursive:true});const target=join(contentRoot,gameId);
+  if(existsSync(target))throw Error('game-content/'+gameId+' already exists. Move it to a backup folder before importing an update.');
   const staging=mkdtempSync(join(contentRoot,'.bolzoo-'));
   try{
     for(const e of entries){
@@ -72,7 +73,7 @@ export function importBolzoo(archive, contentRoot) {
       if(data.length!==e.size||crc(data)!==e.checksum)throw Error('Corrupt ZIP entry: '+e.name);
       mkdirSync(dirname(path),{recursive:true});writeFileSync(path,data);
     }
-    writeFileSync(join(staging,'import-info.json'),JSON.stringify({title:'Болзоо',sha256:createHash('sha256').update(zip).digest('hex'),files:entries.length,bytes:total,importedAt:new Date().toISOString()},null,2));
+    writeFileSync(join(staging,'import-info.json'),JSON.stringify({gameId,sha256:createHash('sha256').update(zip).digest('hex'),files:entries.length,bytes:total,importedAt:new Date().toISOString()},null,2));
     const installed=installStagedBuild(staging,target);return {target,files:entries.length,bytes:total,...installed};
   }catch(e){
     try { removeTemporary(staging); }
@@ -80,6 +81,7 @@ export function importBolzoo(archive, contentRoot) {
     throw e;
   }
 }
+export const importBolzoo=(archive,contentRoot)=>importGame(archive,contentRoot,'bolzoo');
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
   try{if(!process.argv[2])throw Error('Usage: npm run import:bolzoo -- "C:\\path\\NewProject-1.0-web.zip"');console.log(importBolzoo(resolve(process.argv[2]),resolve(process.env.GAME_CONTENT_ROOT||'./game-content')));}
   catch(e){console.error(e.message);process.exitCode=1;}
